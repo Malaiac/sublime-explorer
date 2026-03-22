@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sublime Explorer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="toolbar">
+    <button id="btn-back" title="Précédent">←</button>
+    <button id="btn-forward" title="Suivant">→</button>
+    <button id="btn-up" title="Dossier parent">↑</button>
+    <div id="address-wrapper">
+      <input type="text" id="address-bar" spellcheck="false" autocomplete="off">
+      <div id="address-suggestions" class="hidden"></div>
+    </div>
+    <button id="btn-go" title="Aller">→</button>
+    <span id="system-warning">⚠️ Zone système</span>
+  </div>
+  <div id="panels">
+    <div id="tree-panel">
+      <div id="tree"></div>
+    </div>
+    <div id="resize-handle"></div>
+    <div id="content-panel">
+      <div id="content-header">
+        <span class="col-name" data-sort="name">Nom</span>
+        <span class="col-size" data-sort="size">Taille</span>
+        <span class="col-date" data-sort="modified">Modifié</span>
+      </div>
+      <div id="content"></div>
+    </div>
+    <div id="resize-handle-right"></div>
+    <div id="preview-panel">
+      <div id="preview-title">
+        <span>Aperçu</span>
+        <div id="preview-controls">
+          <button id="btn-font-down" title="Réduire">A−</button>
+          <button id="btn-font-up" title="Agrandir">A+</button>
+          <input type="text" id="preview-search" placeholder="Rechercher…" class="hidden" spellcheck="false">
+        </div>
+      </div>
+      <div id="preview-content">
+        <div id="preview-none">Aucune sélection</div>
+      </div>
+    </div>
+  </div>
+  <div id="bottombar">
+    <div id="status-text"></div>
+    <div id="clipboard-bar">
+      <span id="clipboard-icon"></span>
+      <span id="clipboard-text"></span>
+    </div>
+  </div>
+  <div id="context-menu" class="hidden">
+    <div class="menu-item" data-action="open">Ouvrir</div>
+    <div class="menu-item" data-action="copy">Copier</div>
+    <div class="menu-item" data-action="cut">Couper</div>
+    <div class="menu-item" data-action="paste">Coller</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="rename">Renommer</div>
+    <div class="menu-item" data-action="new-folder">Nouveau dossier</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="delete">Supprimer</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="add-favorite">Ajouter aux favoris</div>
+    <div class="menu-item" data-action="remove-favorite">Retirer des favoris</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="terminal">Ouvrir dans Terminal</div>
+    <div class="menu-item" data-action="reveal">Révéler dans Finder</div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

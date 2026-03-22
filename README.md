@@ -126,7 +126,7 @@ So we built our own.
 
 ## Name
 
-Named after [Sublime Text](https://www.sublimetext.com/), the greatest code editor ever made. The preview panel borrows its warm color palette as a small tribute.
+Named after [Sublime Text](https://www.sublimetext.com/), the greatest code editor ever made. The UI uses the [Monokai](https://github.com/monokai-pro/community-edition) color palette as a tribute to both.
 
 ## License
 

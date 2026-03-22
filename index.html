@@ -69,6 +69,41 @@
     <div class="menu-item" data-action="terminal">Ouvrir dans Terminal</div>
     <div class="menu-item" data-action="reveal">Révéler dans Finder</div>
   </div>
+  <div id="settings-overlay" class="hidden">
+    <div id="settings-panel">
+      <div id="settings-title">Réglages</div>
+      <div id="settings-content">
+        <div class="setting-group">
+          <label class="setting-label">Dossier de démarrage</label>
+          <select id="setting-start-path">
+            <option value="last">Dernier dossier visité</option>
+            <option value="home">Dossier personnel (~)</option>
+            <option value="drive">Drive</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">
+            <input type="checkbox" id="setting-show-hidden">
+            Afficher les fichiers cachés
+          </label>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">
+            <input type="checkbox" id="setting-show-preview">
+            Afficher le panneau aperçu
+          </label>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Taille de police aperçu</label>
+          <input type="range" id="setting-font-size" min="9" max="24" step="1">
+          <span id="setting-font-size-value"></span>
+        </div>
+      </div>
+      <div id="settings-footer">
+        <button id="settings-close">Fermer</button>
+      </div>
+    </div>
+  </div>
   <script src="renderer.js"></script>
 </body>
 </html>

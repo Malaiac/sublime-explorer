@@ -30,6 +30,11 @@ app.whenReady().then(() => {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
+        { label: 'Réglages…', accelerator: 'CmdOrCtrl+,', click: () => {
+          const focused = BrowserWindow.getFocusedWindow();
+          if (focused) focused.webContents.send('open-settings');
+        }},
+        { type: 'separator' },
         { role: 'quit' }
       ]
     },
@@ -278,6 +283,36 @@ ipcMain.handle('reveal-in-finder', (event, filePath) => {
 ipcMain.handle('open-in-terminal', (event, dirPath) => {
   const { exec } = require('child_process');
   exec(`open -a iTerm "${dirPath}"`);
+});
+
+// Settings
+const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+const defaultSettings = {
+  startPath: 'last',         // 'home', 'drive', 'last', or custom path
+  showHidden: true,
+  showPreview: true,
+  previewFontSize: 14,
+  lastPath: ''
+};
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    return { ...defaultSettings, ...saved };
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function saveSettings(settings) {
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+}
+
+ipcMain.handle('get-settings', () => loadSettings());
+ipcMain.handle('save-settings', (event, settings) => {
+  saveSettings(settings);
+  return { ok: true };
 });
 
 // Favorites

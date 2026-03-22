@@ -23,13 +23,24 @@ let focusPanel = 'content'; // 'content' | 'tree'
 let letterBuffer = '';
 let letterTimeout = null;
 
+let settings = {};
+
 // ── Init ──
 async function init() {
   const home = await api.getHome();
-  currentPath = home;
+  settings = await api.getSettings();
+
+  // Apply settings
+  let startPath = home;
+  if (settings.startPath === 'drive') startPath = home + '/Drive';
+  else if (settings.startPath === 'last' && settings.lastPath) startPath = settings.lastPath;
+
+  currentPath = startPath;
   await buildTree(home);
-  await navigateTo(home, true);
+  await navigateTo(startPath, true);
+  applySettings();
   setupEvents();
+  setupSettingsEvents();
 
   // Auto-refresh on filesystem changes (debounced)
   let refreshTimer = null;
@@ -264,7 +275,7 @@ async function navigateTo(dirPath, addToHistory = true) {
   currentPath = dirPath;
   addressBar.value = dirPath;
   selectedContentPaths.clear();
-  contentItems = result.items;
+  contentItems = settings.showHidden !== false ? result.items : result.items.filter(i => !i.isHidden);
   statsCache = {};
   updateSystemWarning(dirPath);
 
@@ -275,8 +286,10 @@ async function navigateTo(dirPath, addToHistory = true) {
     })
   ));
 
-  // Update window title
+  // Update window title + persist last path
   api.setTitle(`${dirPath} — Sublime Explorer`);
+  settings.lastPath = dirPath;
+  api.saveSettings(settings);
 
   // Watch for changes
   api.watchDir(dirPath);
@@ -610,7 +623,12 @@ function setupEvents() {
 
   // Keyboard
   document.addEventListener('keydown', async (e) => {
-    // Cmd+C = copy
+    // Cmd+C = copy (but let text selection copy work in preview)
+    const inPreview = document.getElementById('preview-content').contains(document.activeElement) || window.getSelection()?.anchorNode?.closest?.('#preview-content');
+    if (e.metaKey && e.key === 'c' && window.getSelection()?.toString() && document.getElementById('preview-content').contains(window.getSelection()?.anchorNode?.parentElement)) {
+      // Let native copy handle text selection in preview
+      return;
+    }
     if (e.metaKey && e.key === 'c' && selectedContentPaths.size > 0) {
       e.preventDefault();
       cutPaths.clear();
@@ -1354,6 +1372,66 @@ function jumpToTreeItem(prefix) {
     return label.startsWith(prefix);
   });
   if (match) match.click();
+}
+
+// ── Settings ──
+function applySettings() {
+  // Preview panel visibility
+  document.getElementById('preview-panel').style.display = settings.showPreview !== false ? '' : 'none';
+  document.getElementById('resize-handle-right').style.display = settings.showPreview !== false ? '' : 'none';
+}
+
+function openSettingsPanel() {
+  const overlay = document.getElementById('settings-overlay');
+  document.getElementById('setting-start-path').value = settings.startPath || 'last';
+  document.getElementById('setting-show-hidden').checked = settings.showHidden !== false;
+  document.getElementById('setting-show-preview').checked = settings.showPreview !== false;
+  const fontSlider = document.getElementById('setting-font-size');
+  fontSlider.value = settings.previewFontSize || 14;
+  document.getElementById('setting-font-size-value').textContent = fontSlider.value + 'px';
+  overlay.classList.remove('hidden');
+}
+
+function setupSettingsEvents() {
+  const overlay = document.getElementById('settings-overlay');
+
+  document.getElementById('settings-close').addEventListener('click', () => {
+    overlay.classList.add('hidden');
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.add('hidden');
+  });
+
+  document.getElementById('setting-start-path').addEventListener('change', (e) => {
+    settings.startPath = e.target.value;
+    api.saveSettings(settings);
+  });
+
+  document.getElementById('setting-show-hidden').addEventListener('change', (e) => {
+    settings.showHidden = e.target.checked;
+    api.saveSettings(settings);
+    refreshContent();
+  });
+
+  document.getElementById('setting-show-preview').addEventListener('change', (e) => {
+    settings.showPreview = e.target.checked;
+    api.saveSettings(settings);
+    applySettings();
+  });
+
+  const fontSlider = document.getElementById('setting-font-size');
+  fontSlider.addEventListener('input', (e) => {
+    settings.previewFontSize = parseInt(e.target.value);
+    document.getElementById('setting-font-size-value').textContent = e.target.value + 'px';
+    const md = document.querySelector('.preview-markdown');
+    const txt = document.querySelector('.preview-text');
+    if (md) md.style.fontSize = e.target.value + 'px';
+    if (txt) txt.style.fontSize = e.target.value + 'px';
+    api.saveSettings(settings);
+  });
+
+  // Cmd+, from menu
+  api.onOpenSettings(() => openSettingsPanel());
 }
 
 // ── Preview search ──

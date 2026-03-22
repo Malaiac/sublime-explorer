@@ -19,10 +19,13 @@ contextBridge.exposeInMainWorld('api', {
   revealInFinder: (filePath) => ipcRenderer.invoke('reveal-in-finder', filePath),
   openInTerminal: (dirPath) => ipcRenderer.invoke('open-in-terminal', dirPath),
   getHome: () => ipcRenderer.invoke('get-home'),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   getFavorites: () => ipcRenderer.invoke('get-favorites'),
   saveFavorites: (favs) => ipcRenderer.invoke('save-favorites', favs),
   watchDir: (dirPath) => ipcRenderer.invoke('watch-dir', dirPath),
   onDirChanged: (callback) => ipcRenderer.on('dir-changed', callback),
   snapWindow: (side) => ipcRenderer.invoke('snap-window', side),
-  setTitle: (title) => ipcRenderer.invoke('set-title', title)
+  setTitle: (title) => ipcRenderer.invoke('set-title', title),
+  onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback)
 });

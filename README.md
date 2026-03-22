@@ -126,7 +126,7 @@ So we built our own.
 
 ## Name
 
-Named after [Sublime Text](https://www.sublimetext.com/), the greatest code editor ever made. If Jon Skinner could bring the same elegance to a file manager, it would look something like this. We tried our best.
+Named after [Sublime Text](https://www.sublimetext.com/), the greatest code editor ever made. The preview panel borrows its warm color palette as a small tribute.
 
 ## License
 

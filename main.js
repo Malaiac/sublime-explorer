@@ -259,8 +259,10 @@ ipcMain.handle('read-file-text', async (event, filePath) => {
 ipcMain.handle('render-markdown', async (event, filePath) => {
   try {
     const { marked } = require('marked');
-    const text = await fs.promises.readFile(filePath, 'utf-8');
-    const html = marked(text);
+    let text = await fs.promises.readFile(filePath, 'utf-8');
+    // Escape [N] reference-style lines so marked doesn't swallow them
+    text = text.replace(/^\[(\d+)\]\s/gm, '\\[$1\\] ');
+    const html = marked(text, { breaks: true });
     return { ok: true, html };
   } catch (err) {
     return { ok: false, error: err.message };

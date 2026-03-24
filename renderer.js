@@ -20,6 +20,7 @@ let cutPaths = new Set();
 let contentItems = [];
 let statsCache = {}; // path -> { size, modified, created }
 let focusPanel = 'content'; // 'content' | 'tree'
+let skipTreeScroll = false;
 let letterBuffer = '';
 let letterTimeout = null;
 
@@ -193,7 +194,9 @@ function createTreeNode(dirPath, label, depth, isRoot = false) {
   item.addEventListener('click', async (e) => {
     e.stopPropagation();
     selectTreeItem(item, dirPath);
+    skipTreeScroll = true;
     await navigateTo(dirPath, true);
+    skipTreeScroll = false;
 
     // Expand if not expanded
     if (!loaded) {
@@ -499,9 +502,11 @@ async function highlightTreePath(dirPath) {
     const childrenEl = container.querySelector('.tree-children');
     const toggle = node.querySelector('.tree-toggle');
     if (!childrenEl) return;
-    const depth = (node.style.paddingLeft ? parseInt(node.style.paddingLeft) / 16 : 0);
-    // Always reload children to stay fresh
-    await loadTreeChildren(nodePath, childrenEl, Math.round(depth));
+    // Only load if not already expanded
+    if (!childrenEl.classList.contains('expanded') || childrenEl.children.length === 0) {
+      const depth = (node.style.paddingLeft ? parseInt(node.style.paddingLeft) / 16 : 0);
+      await loadTreeChildren(nodePath, childrenEl, Math.round(depth));
+    }
     childrenEl.classList.add('expanded');
     toggle.classList.add('expanded');
   }
@@ -522,7 +527,20 @@ async function highlightTreePath(dirPath) {
   let treeItem = findInMainTree(dirPath);
   if (treeItem) {
     selectTreeItem(treeItem, dirPath);
-    treeItem.scrollIntoView({ block: 'center' });
+    if (!skipTreeScroll) scrollIfOutOfCenter(treeItem);
+  }
+}
+
+function scrollIfOutOfCenter(el) {
+  const panel = document.getElementById('tree-panel');
+  const panelRect = panel.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const thirdH = panelRect.height / 3;
+  const centerTop = panelRect.top + thirdH;
+  const centerBottom = panelRect.top + thirdH * 2;
+  // Only scroll if element is outside the middle third
+  if (elRect.top < centerTop || elRect.bottom > centerBottom) {
+    el.scrollIntoView({ block: 'center' });
   }
 }
 

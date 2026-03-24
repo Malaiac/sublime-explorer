@@ -242,11 +242,14 @@ ipcMain.handle('clipboard-paste', async (event, destDir) => {
   }
 });
 
-// Read file text (for preview)
+// Read file text (for preview, max 512KB)
 ipcMain.handle('read-file-text', async (event, filePath) => {
   try {
-    const text = await fs.promises.readFile(filePath, 'utf-8');
-    return { ok: true, text };
+    const handle = await fs.promises.open(filePath, 'r');
+    const buf = Buffer.alloc(512 * 1024);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    await handle.close();
+    return { ok: true, text: buf.toString('utf-8', 0, bytesRead) };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -274,6 +277,32 @@ ipcMain.handle('open-file', async (event, filePath) => {
   }
 });
 
+// Open with — let user pick an app via system dialog
+ipcMain.handle('open-with', async (event, filePath) => {
+  const result = await dialog.showOpenDialog({
+    title: 'Ouvrir avec…',
+    defaultPath: '/Applications',
+    filters: [{ name: 'Applications', extensions: ['app'] }],
+    properties: ['openFile'],
+    message: `Choisir une application pour ouvrir ${path.basename(filePath)}`
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    const appPath = result.filePaths[0];
+    const { exec } = require('child_process');
+    exec(`open -a "${appPath}" "${filePath}"`);
+  }
+});
+
+// Native drag to external apps
+ipcMain.on('native-drag', (event, filePaths) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  event.sender.startDrag({
+    files: filePaths,
+    icon: path.join(__dirname, 'icon.png')
+  });
+});
+
 // Reveal in Finder
 ipcMain.handle('reveal-in-finder', (event, filePath) => {
   shell.showItemInFolder(filePath);
@@ -289,11 +318,13 @@ ipcMain.handle('open-in-terminal', (event, dirPath) => {
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
 const defaultSettings = {
-  startPath: 'last',         // 'home', 'drive', 'last', or custom path
+  startPath: 'last',
   showHidden: true,
   showPreview: true,
   previewFontSize: 14,
-  lastPath: ''
+  lastPath: '',
+  treeWidth: 280,
+  previewWidth: 250
 };
 
 function loadSettings() {

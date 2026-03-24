@@ -215,6 +215,15 @@ function createTreeNode(dirPath, label, depth, isRoot = false) {
     toggle.classList.toggle('expanded', isExpanded);
   });
 
+  // Right-click on tree item
+  item.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectTreeItem(item, dirPath);
+    // Show context menu with favorites option
+    showContextMenu(e.clientX, e.clientY);
+  });
+
   // Drag & drop target
   item.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -225,7 +234,13 @@ function createTreeNode(dirPath, label, depth, isRoot = false) {
   item.addEventListener('drop', async (e) => {
     e.preventDefault();
     item.classList.remove('drag-over-tree');
-    const sources = JSON.parse(e.dataTransfer.getData('application/json') || '[]');
+    let sources = [];
+    if (e.dataTransfer.files?.length > 0) {
+      sources = [...e.dataTransfer.files].map(f => f.path).filter(Boolean);
+    }
+    if (!sources.length) {
+      sources = JSON.parse(e.dataTransfer.getData('application/json') || '[]');
+    }
     if (!sources.length) return;
     if (e.altKey) {
       await api.copyFiles(sources, dirPath);
@@ -233,7 +248,6 @@ function createTreeNode(dirPath, label, depth, isRoot = false) {
       await api.moveFiles(sources, dirPath);
     }
     await refreshContent();
-    // Reload tree children
     childrenEl.innerHTML = '';
     loaded = false;
   });
@@ -280,7 +294,7 @@ async function navigateTo(dirPath, addToHistory = true) {
   updateSystemWarning(dirPath);
 
   // Preload stats for sorting
-  Promise.all(contentItems.map(item =>
+  await Promise.all(contentItems.map(item =>
     api.stat(item.path).then(s => {
       if (s.ok) statsCache[item.path] = { size: s.size, modified: s.modified, created: s.created };
     })
@@ -290,6 +304,7 @@ async function navigateTo(dirPath, addToHistory = true) {
   api.setTitle(`${dirPath} — Sublime Explorer`);
   settings.lastPath = dirPath;
   api.saveSettings(settings);
+  updateBreadcrumbs(dirPath);
 
   // Watch for changes
   api.watchDir(dirPath);
@@ -303,7 +318,12 @@ async function navigateTo(dirPath, addToHistory = true) {
     history.push(dirPath);
   }
 
+  // Reapply current sort
+  if (currentSort.key !== 'name' || !currentSort.asc) {
+    applyCurrentSort();
+  }
   renderContent();
+  updateSortIndicators();
 }
 
 function renderContent() {
@@ -411,7 +431,7 @@ function createContentRow(item) {
     }
   });
 
-  // Drag source
+  // Drag source (internal + native for external apps)
   row.draggable = true;
   row.addEventListener('dragstart', (e) => {
     if (!selectedContentPaths.has(item.path)) {
@@ -424,6 +444,8 @@ function createContentRow(item) {
     e.dataTransfer.setData('application/json', JSON.stringify(paths));
     e.dataTransfer.effectAllowed = 'copyMove';
     row.classList.add('dragging');
+    // Native drag for external apps (Gmail, Finder, Slack...)
+    api.nativeDrag(paths);
   });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
 
@@ -437,8 +459,17 @@ function createContentRow(item) {
     row.addEventListener('dragleave', () => row.classList.remove('drag-over-tree'));
     row.addEventListener('drop', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       row.classList.remove('drag-over-tree');
-      const sources = JSON.parse(e.dataTransfer.getData('application/json') || '[]');
+      let sources = [];
+      // External files
+      if (e.dataTransfer.files?.length > 0) {
+        sources = [...e.dataTransfer.files].map(f => f.path).filter(Boolean);
+      }
+      // Internal drag
+      if (!sources.length) {
+        sources = JSON.parse(e.dataTransfer.getData('application/json') || '[]');
+      }
       if (!sources.length) return;
       if (e.altKey) {
         await api.copyFiles(sources, item.path);
@@ -455,7 +486,6 @@ function createContentRow(item) {
 async function highlightTreePath(dirPath) {
   const favContainer = document.getElementById('favorites-container');
 
-  // Find node in main tree (not favorites)
   function findInMainTree(path) {
     const all = document.querySelectorAll(`.tree-item[data-path="${CSS.escape(path)}"]`);
     for (const el of all) {
@@ -464,15 +494,19 @@ async function highlightTreePath(dirPath) {
     return null;
   }
 
-  // Try to find existing node in main tree
-  let treeItem = findInMainTree(dirPath);
-  if (treeItem) {
-    selectTreeItem(treeItem, dirPath);
-    treeItem.scrollIntoView({ block: 'center' });
-    return;
+  async function expandNode(node, nodePath) {
+    const container = node.parentElement;
+    const childrenEl = container.querySelector('.tree-children');
+    const toggle = node.querySelector('.tree-toggle');
+    if (!childrenEl) return;
+    const depth = (node.style.paddingLeft ? parseInt(node.style.paddingLeft) / 16 : 0);
+    // Always reload children to stay fresh
+    await loadTreeChildren(nodePath, childrenEl, Math.round(depth));
+    childrenEl.classList.add('expanded');
+    toggle.classList.add('expanded');
   }
 
-  // Build path segments and expand from closest ancestor
+  // Build path segments and expand each ancestor
   const segments = dirPath.split('/').filter(Boolean);
   let expandPath = '';
 
@@ -480,22 +514,12 @@ async function highlightTreePath(dirPath) {
     expandPath += '/' + segments[i];
     let node = findInMainTree(expandPath);
     if (node) {
-      const container = node.parentElement;
-      const childrenEl = container.querySelector('.tree-children');
-      const toggle = node.querySelector('.tree-toggle');
-      if (childrenEl && !childrenEl.classList.contains('expanded')) {
-        const depth = (node.style.paddingLeft ? parseInt(node.style.paddingLeft) / 16 : 0);
-        if (childrenEl.children.length === 0) {
-          await loadTreeChildren(expandPath, childrenEl, Math.round(depth));
-        }
-        childrenEl.classList.add('expanded');
-        toggle.classList.add('expanded');
-      }
+      await expandNode(node, expandPath);
     }
   }
 
-  // Try again after expansion
-  treeItem = findInMainTree(dirPath);
+  // Select the target node
+  let treeItem = findInMainTree(dirPath);
   if (treeItem) {
     selectTreeItem(treeItem, dirPath);
     treeItem.scrollIntoView({ block: 'center' });
@@ -508,6 +532,9 @@ async function refreshContent() {
 
 // ── Events ──
 function setupEvents() {
+  // Breadcrumbs → address bar toggle
+  document.getElementById('breadcrumbs').addEventListener('dblclick', showAddressBar);
+
   // Address bar
   const suggestions = document.getElementById('address-suggestions');
   let suggestTimer = null;
@@ -534,10 +561,12 @@ function setupEvents() {
       suggestions.classList.add('hidden');
       const p = addressBar.value.trim();
       if (p) await navigateTo(p, true);
+      showBreadcrumbs();
       return;
     }
     if (e.key === 'Escape') {
       suggestions.classList.add('hidden');
+      showBreadcrumbs();
       return;
     }
     if (e.key === 'Tab' && !suggestions.classList.contains('hidden') && items.length > 0) {
@@ -558,7 +587,10 @@ function setupEvents() {
   });
 
   addressBar.addEventListener('blur', () => {
-    setTimeout(() => suggestions.classList.add('hidden'), 200);
+    setTimeout(() => {
+      suggestions.classList.add('hidden');
+      showBreadcrumbs();
+    }, 200);
   });
 
   async function updateAddressSuggestions() {
@@ -623,6 +655,10 @@ function setupEvents() {
 
   // Keyboard
   document.addEventListener('keydown', async (e) => {
+    // Skip all custom shortcuts when in an input field (rename, search, etc.)
+    const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT';
+    if (inInput && document.activeElement !== addressBar && !e.metaKey) return;
+
     // Cmd+C = copy (but let text selection copy work in preview)
     const inPreview = document.getElementById('preview-content').contains(document.activeElement) || window.getSelection()?.anchorNode?.closest?.('#preview-content');
     if (e.metaKey && e.key === 'c' && window.getSelection()?.toString() && document.getElementById('preview-content').contains(window.getSelection()?.anchorNode?.parentElement)) {
@@ -697,8 +733,7 @@ function setupEvents() {
     // Cmd+L = focus address bar
     if (e.metaKey && e.key === 'l') {
       e.preventDefault();
-      addressBar.focus();
-      addressBar.select();
+      showAddressBar();
     }
     // Cmd+F = search in preview
     if (e.metaKey && e.key === 'f') {
@@ -866,7 +901,7 @@ function setupEvents() {
       navigateContent(1, true);
     }
     // Letter keys = jump to item starting with letter
-    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && document.activeElement !== addressBar) {
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && document.activeElement !== addressBar && !document.activeElement.classList.contains('rename-input') && document.activeElement.tagName !== 'INPUT') {
       const letter = e.key.toLowerCase();
       // Only for letters/numbers
       if (/[a-z0-9._-]/.test(letter)) {
@@ -917,6 +952,9 @@ function setupEvents() {
           else await api.openFile(paths[0]);
         }
         break;
+      case 'open-with':
+        if (paths.length === 1) await api.openWith(paths[0]);
+        break;
       case 'copy':
         cutPaths.clear();
         await api.clipboardCopy(paths);
@@ -948,9 +986,15 @@ function setupEvents() {
         createNewFolder();
         break;
       case 'add-favorite':
-        const favPath = paths.length === 1 && contentItems.find(i => i.path === paths[0])?.isDirectory
-          ? paths[0] : currentPath;
-        await addFavorite(favPath);
+        let favAddPath;
+        if (paths.length === 1 && contentItems.find(i => i.path === paths[0])?.isDirectory) {
+          favAddPath = paths[0];
+        } else if (selectedTreePath) {
+          favAddPath = selectedTreePath;
+        } else {
+          favAddPath = currentPath;
+        }
+        await addFavorite(favAddPath);
         break;
       case 'remove-favorite':
         if (paths.length === 1) {
@@ -986,13 +1030,70 @@ function setupEvents() {
       previewPanel.style.width = Math.max(150, Math.min(windowWidth - 250, windowWidth - e.clientX)) + 'px';
     }
   });
-  document.addEventListener('mouseup', () => { resizing = null; document.body.style.cursor = ''; });
+  document.addEventListener('mouseup', () => {
+    if (resizing) {
+      settings.treeWidth = parseInt(document.getElementById('tree-panel').style.width) || 280;
+      settings.previewWidth = parseInt(document.getElementById('preview-panel').style.width) || 250;
+      api.saveSettings(settings);
+    }
+    resizing = null;
+    document.body.style.cursor = '';
+  });
 
   // Column sort
   document.getElementById('content-header').addEventListener('click', (e) => {
     const sortKey = e.target.dataset.sort;
     if (!sortKey) return;
     sortContent(sortKey);
+  });
+
+  // Drop from external apps or other Sublime Explorer windows onto content panel
+  const contentPanel = document.getElementById('content');
+  contentPanel.addEventListener('dragover', (e) => {
+    // Only handle if not over a content-item (those have their own handlers)
+    if (!e.target.closest('.content-item')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+      contentPanel.classList.add('drop-target');
+    }
+  });
+  contentPanel.addEventListener('dragleave', (e) => {
+    if (!contentPanel.contains(e.relatedTarget)) {
+      contentPanel.classList.remove('drop-target');
+    }
+  });
+  contentPanel.addEventListener('drop', async (e) => {
+    if (e.target.closest('.content-item[data-is-dir="true"]')) return; // handled by folder drop
+    e.preventDefault();
+    contentPanel.classList.remove('drop-target');
+
+    // External files (from Finder, browser, etc.)
+    if (e.dataTransfer.files?.length > 0) {
+      const sources = [...e.dataTransfer.files].map(f => f.path).filter(Boolean);
+      if (sources.length) {
+        if (e.altKey) {
+          await api.copyFiles(sources, currentPath);
+        } else {
+          await api.moveFiles(sources, currentPath);
+        }
+        await refreshContent();
+        return;
+      }
+    }
+
+    // Internal drag (from same or other Sublime Explorer window)
+    const jsonData = e.dataTransfer.getData('application/json');
+    if (jsonData) {
+      const sources = JSON.parse(jsonData);
+      if (sources.length) {
+        if (e.altKey) {
+          await api.copyFiles(sources, currentPath);
+        } else {
+          await api.moveFiles(sources, currentPath);
+        }
+        await refreshContent();
+      }
+    }
   });
 
   // Preview search
@@ -1070,25 +1171,11 @@ async function createNewFolder() {
 }
 
 let currentSort = { key: 'name', asc: true };
-function sortContent(key) {
-  if (currentSort.key === key) {
-    currentSort.asc = !currentSort.asc;
-  } else {
-    currentSort = { key, asc: true };
-  }
 
-  // Update header indicators
-  document.querySelectorAll('#content-header span').forEach(el => {
-    el.textContent = el.textContent.replace(/ [▲▼]$/, '');
-    if (el.dataset.sort === key) {
-      el.textContent += currentSort.asc ? ' ▲' : ' ▼';
-    }
-  });
-
+function applyCurrentSort() {
+  const key = currentSort.key;
   contentItems.sort((a, b) => {
-    // Directories always first
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-
     let cmp = 0;
     if (key === 'name') {
       cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -1103,7 +1190,25 @@ function sortContent(key) {
     }
     return currentSort.asc ? cmp : -cmp;
   });
+}
 
+function updateSortIndicators() {
+  document.querySelectorAll('#content-header span').forEach(el => {
+    el.textContent = el.textContent.replace(/ [▲▼]$/, '');
+    if (el.dataset.sort === currentSort.key) {
+      el.textContent += currentSort.asc ? ' ▲' : ' ▼';
+    }
+  });
+}
+
+function sortContent(key) {
+  if (currentSort.key === key) {
+    currentSort.asc = !currentSort.asc;
+  } else {
+    currentSort = { key, asc: true };
+  }
+  applyCurrentSort();
+  updateSortIndicators();
   renderContent();
 }
 
@@ -1155,7 +1260,7 @@ async function updatePreview() {
     <div class="preview-filename">${item.name}</div>
     <div class="preview-field">
       <span class="preview-label">Chemin complet</span>
-      <span class="preview-value preview-path" title="Double-clic pour copier">${filePath}</span>
+      <span class="preview-value preview-path" title="Clic pour copier">${filePath}</span>
     </div>
     <div class="preview-field">
       <span class="preview-label">Type</span>
@@ -1195,6 +1300,16 @@ async function updatePreview() {
     `;
   }
 
+  // PDF preview
+  if (!item.isDirectory && ext === 'pdf') {
+    html += `
+      <div class="preview-field">
+        <span class="preview-label">Aperçu</span>
+        <embed class="preview-pdf" src="file://${filePath}" type="application/pdf">
+      </div>
+    `;
+  }
+
   // Markdown preview
   if (!item.isDirectory && ext === 'md' && stat.ok && stat.size < 200000) {
     try {
@@ -1212,15 +1327,17 @@ async function updatePreview() {
   // Text preview for small files (not markdown)
   else {
     const textExts = ['txt', 'json', 'js', 'ts', 'py', 'php', 'css', 'html', 'xml', 'yaml', 'yml', 'sh', 'log', 'csv'];
-    if (!item.isDirectory && textExts.includes(ext) && stat.ok && stat.size < 50000) {
+    if (!item.isDirectory && textExts.includes(ext) && stat.ok) {
       try {
         const textContent = await api.readFileText(filePath);
         if (textContent.ok) {
-          const escaped = textContent.text.substring(0, 2000).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const maxChars = 500000;
+        let escaped = textContent.text.substring(0, maxChars).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          if (ext === 'yaml' || ext === 'yml') escaped = highlightYaml(escaped);
           html += `
             <div class="preview-field">
-              <span class="preview-label">Contenu</span>
-              <pre class="preview-text">${escaped}${textContent.text.length > 2000 ? '\n…' : ''}</pre>
+              <span class="preview-label">Contenu${textContent.text.length > maxChars ? ' (tronqué à 500 Ko)' : ''}</span>
+              <pre class="preview-text">${escaped}${textContent.text.length > maxChars ? '\n…' : ''}</pre>
             </div>
           `;
         }
@@ -1233,7 +1350,7 @@ async function updatePreview() {
   const pathEl = previewContent.querySelector('.preview-path');
   if (pathEl) {
     pathEl.style.cursor = 'pointer';
-    pathEl.addEventListener('dblclick', () => {
+    pathEl.addEventListener('click', () => {
       navigator.clipboard.writeText(filePath);
       pathEl.style.color = '#007acc';
       setTimeout(() => pathEl.style.color = '', 500);
@@ -1379,6 +1496,18 @@ function applySettings() {
   // Preview panel visibility
   document.getElementById('preview-panel').style.display = settings.showPreview !== false ? '' : 'none';
   document.getElementById('resize-handle-right').style.display = settings.showPreview !== false ? '' : 'none';
+  // Panel widths — ensure content panel keeps at least 30% of window width
+  const winWidth = window.innerWidth;
+  const maxSidePanels = Math.floor(winWidth * 0.5);
+  let treeW = settings.treeWidth || 280;
+  let previewW = settings.previewWidth || 250;
+  if (treeW + previewW > maxSidePanels) {
+    const ratio = maxSidePanels / (treeW + previewW);
+    treeW = Math.floor(treeW * ratio);
+    previewW = Math.floor(previewW * ratio);
+  }
+  document.getElementById('tree-panel').style.width = treeW + 'px';
+  document.getElementById('preview-panel').style.width = previewW + 'px';
 }
 
 function openSettingsPanel() {
@@ -1519,6 +1648,52 @@ function setupPreviewSearch() {
   }
 }
 
+// ── Breadcrumbs ──
+function updateBreadcrumbs(dirPath) {
+  const bc = document.getElementById('breadcrumbs');
+  bc.innerHTML = '';
+  const segments = dirPath.split('/').filter(Boolean);
+
+  // Root
+  const rootEl = document.createElement('span');
+  rootEl.className = 'breadcrumb';
+  rootEl.textContent = '/';
+  rootEl.addEventListener('click', (e) => { e.stopPropagation(); navigateTo('/', true); });
+  bc.appendChild(rootEl);
+
+  let path = '';
+  for (let i = 0; i < segments.length; i++) {
+    path += '/' + segments[i];
+    const sep = document.createElement('span');
+    sep.className = 'breadcrumb-sep';
+    sep.textContent = '›';
+    bc.appendChild(sep);
+
+    const crumb = document.createElement('span');
+    crumb.className = 'breadcrumb';
+    crumb.textContent = segments[i];
+    const crumbPath = path;
+    crumb.addEventListener('click', (e) => { e.stopPropagation(); navigateTo(crumbPath, true); });
+    bc.appendChild(crumb);
+  }
+}
+
+function showAddressBar() {
+  const bc = document.getElementById('breadcrumbs');
+  bc.classList.add('hidden');
+  addressBar.classList.remove('hidden');
+  addressBar.value = currentPath;
+  addressBar.focus();
+  addressBar.select();
+}
+
+function showBreadcrumbs() {
+  const bc = document.getElementById('breadcrumbs');
+  bc.classList.remove('hidden');
+  addressBar.classList.add('hidden');
+  document.getElementById('address-suggestions').classList.add('hidden');
+}
+
 // ── System zone warning ──
 function updateSystemWarning(dirPath) {
   const home = currentPath.startsWith('/Users/') ? dirPath.split('/').slice(0, 3).join('/') : '';
@@ -1529,6 +1704,39 @@ function updateSystemWarning(dirPath) {
   const isSystem = systemPaths.some(sp => dirPath === sp || dirPath.startsWith(sp + '/'));
   document.body.classList.toggle('system-zone', isSystem);
   document.getElementById('system-warning').classList.toggle('visible', isSystem);
+}
+
+// ── Syntax highlighting ──
+function highlightYaml(text) {
+  return text.split('\n').map(line => {
+    // Comments
+    if (/^\s*#/.test(line)) {
+      return `<span class="sy-comment">${line}</span>`;
+    }
+    // Key: value
+    return line.replace(
+      /^(\s*)([\w.\-/]+)(:)(\s*)(.*)/,
+      (m, indent, key, colon, space, val) => {
+        let valHtml = val;
+        if (/^(&quot;.*&quot;|&#39;.*&#39;|&quot;.*|&#39;.*)/.test(val) || /^["']/.test(val)) {
+          valHtml = `<span class="sy-string">${val}</span>`;
+        } else if (/^(true|false|yes|no|on|off)$/i.test(val)) {
+          valHtml = `<span class="sy-bool">${val}</span>`;
+        } else if (/^(null|~)$/i.test(val)) {
+          valHtml = `<span class="sy-null">${val}</span>`;
+        } else if (/^-?\d+(\.\d+)?$/.test(val)) {
+          valHtml = `<span class="sy-number">${val}</span>`;
+        } else if (val.startsWith('#')) {
+          valHtml = `<span class="sy-comment">${val}</span>`;
+        } else if (val) {
+          valHtml = `<span class="sy-string">${val}</span>`;
+        }
+        return `${indent}<span class="sy-key">${key}</span><span class="sy-colon">${colon}</span>${space}${valHtml}`;
+      }
+    )
+    // List items
+    .replace(/^(\s*)(- )/, '$1<span class="sy-list">$2</span>');
+  }).join('\n');
 }
 
 // ── Helpers ──

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   clipboardCut: (paths) => ipcRenderer.invoke('clipboard-cut', paths),
   clipboardPaste: (destDir) => ipcRenderer.invoke('clipboard-paste', destDir),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+  nativeDrag: (filePaths) => ipcRenderer.send('native-drag', filePaths),
+  openWith: (filePath) => ipcRenderer.invoke('open-with', filePath),
   readFileText: (filePath) => ipcRenderer.invoke('read-file-text', filePath),
   renderMarkdown: (filePath) => ipcRenderer.invoke('render-markdown', filePath),
   revealInFinder: (filePath) => ipcRenderer.invoke('reveal-in-finder', filePath),

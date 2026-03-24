@@ -11,7 +11,8 @@
     <button id="btn-forward" title="Suivant">→</button>
     <button id="btn-up" title="Dossier parent">↑</button>
     <div id="address-wrapper">
-      <input type="text" id="address-bar" spellcheck="false" autocomplete="off">
+      <div id="breadcrumbs"></div>
+      <input type="text" id="address-bar" spellcheck="false" autocomplete="off" class="hidden">
       <div id="address-suggestions" class="hidden"></div>
     </div>
     <button id="btn-go" title="Aller">→</button>
@@ -54,6 +55,7 @@
   </div>
   <div id="context-menu" class="hidden">
     <div class="menu-item" data-action="open">Ouvrir</div>
+    <div class="menu-item" data-action="open-with">Ouvrir avec…</div>
     <div class="menu-item" data-action="copy">Copier</div>
     <div class="menu-item" data-action="cut">Couper</div>
     <div class="menu-item" data-action="paste">Coller</div>

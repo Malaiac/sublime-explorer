@@ -86,6 +86,9 @@ async function buildTree(rootPath) {
 
   await renderFavorites();
 
+  // Volumes section
+  await renderVolumes();
+
   // Separator
   const sep = document.createElement('div');
   sep.className = 'tree-separator';
@@ -160,6 +163,57 @@ async function addFavorite(dirPath) {
   }
 }
 
+async function renderVolumes() {
+  const result = await api.getVolumes();
+  if (!result.ok || !result.volumes.length) return;
+
+  const sep = document.createElement('div');
+  sep.className = 'tree-separator';
+  tree.appendChild(sep);
+
+  const header = document.createElement('div');
+  header.className = 'tree-section-header';
+  header.textContent = '💾 Volumes';
+  tree.appendChild(header);
+
+  for (const vol of result.volumes) {
+    const item = document.createElement('div');
+    item.className = 'tree-item fav-item';
+    item.style.paddingLeft = '4px';
+    item.dataset.path = vol.path;
+    item.innerHTML = `<span class="tree-icon">💾</span><span class="tree-label">${vol.name}</span>`;
+    item.addEventListener('click', async () => {
+      await navigateTo(vol.path, true);
+    });
+    // Drop target
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+      item.classList.add('drag-over-tree');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over-tree'));
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over-tree');
+      let sources = [];
+      if (e.dataTransfer.files?.length > 0) {
+        sources = [...e.dataTransfer.files].map(f => f.path).filter(Boolean);
+      }
+      if (!sources.length) {
+        sources = JSON.parse(e.dataTransfer.getData('application/json') || '[]');
+      }
+      if (!sources.length) return;
+      if (e.altKey) {
+        await api.copyFiles(sources, vol.path);
+      } else {
+        await api.moveFiles(sources, vol.path);
+      }
+      await refreshContent();
+    });
+    tree.appendChild(item);
+  }
+}
+
 function createTreeNode(dirPath, label, depth, isRoot = false) {
   const container = document.createElement('div');
 
@@ -194,17 +248,18 @@ function createTreeNode(dirPath, label, depth, isRoot = false) {
   item.addEventListener('click', async (e) => {
     e.stopPropagation();
     selectTreeItem(item, dirPath);
-    skipTreeScroll = true;
-    await navigateTo(dirPath, true);
-    skipTreeScroll = false;
 
-    // Expand if not expanded
+    // Expand first so highlightTreePath doesn't reload
     if (!loaded) {
       await loadTreeChildren(dirPath, childrenEl, depth);
       loaded = true;
     }
     childrenEl.classList.add('expanded');
     toggle.classList.add('expanded');
+
+    skipTreeScroll = true;
+    await navigateTo(dirPath, true);
+    skipTreeScroll = false;
   });
 
   // Click on toggle = expand/collapse only
@@ -434,7 +489,7 @@ function createContentRow(item) {
     }
   });
 
-  // Drag source (internal + native for external apps)
+  // Drag source
   row.draggable = true;
   row.addEventListener('dragstart', (e) => {
     if (!selectedContentPaths.has(item.path)) {
@@ -447,10 +502,18 @@ function createContentRow(item) {
     e.dataTransfer.setData('application/json', JSON.stringify(paths));
     e.dataTransfer.effectAllowed = 'copyMove';
     row.classList.add('dragging');
-    // Native drag for external apps (Gmail, Finder, Slack...)
-    api.nativeDrag(paths);
   });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
+
+  // Alt+drag = native drag for external apps (Gmail, Finder, Slack...)
+  row.addEventListener('mousedown', (e) => {
+    if (e.altKey) {
+      if (!selectedContentPaths.has(item.path)) {
+        selectedContentPaths.add(item.path);
+      }
+      api.nativeDrag([...selectedContentPaths]);
+    }
+  });
 
   // Drag target (for directories in content)
   if (item.isDirectory) {
@@ -552,6 +615,12 @@ async function refreshContent() {
 function setupEvents() {
   // Breadcrumbs → address bar toggle
   document.getElementById('breadcrumbs').addEventListener('dblclick', showAddressBar);
+  document.getElementById('breadcrumbs').addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    navigator.clipboard.writeText(currentPath);
+    clipboardIcon.textContent = '📎';
+    clipboardText.textContent = 'Chemin copié : ' + currentPath;
+  });
 
   // Address bar
   const suggestions = document.getElementById('address-suggestions');
@@ -677,10 +746,17 @@ function setupEvents() {
     const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT';
     if (inInput && document.activeElement !== addressBar && !e.metaKey) return;
 
-    // Cmd+C = copy (but let text selection copy work in preview)
-    const inPreview = document.getElementById('preview-content').contains(document.activeElement) || window.getSelection()?.anchorNode?.closest?.('#preview-content');
-    if (e.metaKey && e.key === 'c' && window.getSelection()?.toString() && document.getElementById('preview-content').contains(window.getSelection()?.anchorNode?.parentElement)) {
-      // Let native copy handle text selection in preview
+    // Cmd+C = copy (text selection in preview/breadcrumbs, or files, or current path)
+    if (e.metaKey && e.key === 'c' && window.getSelection()?.toString()) {
+      // Let native copy handle any text selection (preview, breadcrumbs, etc.)
+      return;
+    }
+    if (e.metaKey && e.key === 'c' && selectedContentPaths.size === 0) {
+      // No file selected — copy current path
+      e.preventDefault();
+      navigator.clipboard.writeText(currentPath);
+      clipboardIcon.textContent = '📎';
+      clipboardText.textContent = 'Chemin copié : ' + currentPath;
       return;
     }
     if (e.metaKey && e.key === 'c' && selectedContentPaths.size > 0) {

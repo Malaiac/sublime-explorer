@@ -301,7 +301,7 @@ ipcMain.on('native-drag', (event, filePaths) => {
   if (!win) return;
   event.sender.startDrag({
     files: filePaths,
-    icon: path.join(__dirname, 'icon.png')
+    icon: path.join(__dirname, 'drag-icon.png')
   });
 });
 
@@ -385,6 +385,19 @@ ipcMain.handle('watch-dir', (event, dirPath) => {
 // Home directory
 ipcMain.handle('get-home', () => {
   return require('os').homedir();
+});
+
+// List external volumes
+ipcMain.handle('get-volumes', async () => {
+  try {
+    const entries = await fs.promises.readdir('/Volumes', { withFileTypes: true });
+    const volumes = entries
+      .filter(e => e.name !== 'Macintosh HD')
+      .map(e => ({ name: e.name, path: '/Volumes/' + e.name }));
+    return { ok: true, volumes };
+  } catch (err) {
+    return { ok: false, volumes: [] };
+  }
 });
 
 // Set window title

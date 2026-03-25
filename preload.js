@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   revealInFinder: (filePath) => ipcRenderer.invoke('reveal-in-finder', filePath),
   openInTerminal: (dirPath) => ipcRenderer.invoke('open-in-terminal', dirPath),
   getHome: () => ipcRenderer.invoke('get-home'),
+  getVolumes: () => ipcRenderer.invoke('get-volumes'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   getFavorites: () => ipcRenderer.invoke('get-favorites'),
